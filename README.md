@@ -1,2 +1,2 @@
 # Genetic-Algorithm-Optimisation
-Python project for optimisation using the genetic algorithm
+Python project for optimization using the genetic algorithm
