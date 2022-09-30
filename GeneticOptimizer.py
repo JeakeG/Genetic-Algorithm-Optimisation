@@ -23,7 +23,3 @@ class Population:
 class Individual:
     def __init__(self, data, **kwargs):
         self.data = data
-        
-
-        
-
