@@ -1,3 +1,4 @@
+import inspect
 import random
 
 """
@@ -24,12 +25,17 @@ import random
         precision
             -int > 0
             -the number of digits in the binary representation of the design's variables
+        mutation
+            -float [0, 1]
+            -the chance of a mutation occuring in offspring
+        tournament_size
+            -int < size
+            -the number of designs present for each tournament selection
 """
 class GeneticOptimizer:
     def __init__(self, func, lowerBound, upperBound, **kwargs):
         self.func = func
-        if not self.registerFunc():
-            raise Exception("Provided function was formatted incorrectly.")
+        self.arglen = len(str(inspect.signature(self.func)).split(","))
 
         self.lowerBound = lowerBound
         self.upperBound = upperBound
@@ -37,8 +43,8 @@ class GeneticOptimizer:
             raise Exception("Lower bound must be less than upper bound.")
 
         self.iter = kwargs.get("iter", 50)
-        if self.iter < 5:
-            raise Exception("Must at least 5 iterations.")
+        if self.iter < 0:
+            raise Exception("Must at least 1 iteration.")
 
         self.size = kwargs.get("size", 25)
         if self.size % 2 != 0:
@@ -54,8 +60,20 @@ class GeneticOptimizer:
         if self.precision < 1:
             raise Exception("Precision must be greater than 0")
         
-        self.sum_fitness = []
+        self.mutation = kwargs.get("mutation", 0.05)
+        if self.mutation < 0 or self.mutation > 1:
+            raise Exception("Mutation must be a value from 0 to 1.")
         
+        self.tournament_size = kwargs.get("tournament_size", 3)
+        if self.tournament_size > self.size:
+            raise Exception("Tournament size must be smaller than population size")
+        
+        # history of population's fitness
+        self.fitness_history = []
+        # list of designs in current generation
+        self.current_gen = []
+
+
     def registerFunc(self):
         try:
             string = self.func
@@ -71,104 +89,94 @@ class GeneticOptimizer:
             return True
         except Exception as e:
             return False
-        
-    def firstGen(self):
-        self.current_generation = []
-        for i in range(self.size):
-            rand_data = []
-            for j in range(self.arglen):
-                rand_data.append(random.uniform(self.lowerBound, self.upperBound))
-            self.current_generation.append(Design(rand_data, self))
-            
-    def getFitness(self, design):
-        return eval(self.func_name + str(design.data))
-        
-    def crossover(self):
-        # calculates fitness for current generation
-        fitness_list = []
-        for i in range(self.size):
-            fitness_list.append(self.getFitness(self.current_generation[i]))
-        
-        self.sum_fitness.append(sum(fitness_list)/self.size)
 
-        # amount of previous generation to carry over
-        carryover = int(self.size * self.elitism)
-        num_child = self.size - carryover
 
-        if num_child % 2 != 0:
-            num_child += 1
-            carryover -= 1
-        
-        # weighted random list of parents of next generation based on fitness
-        # print(fitness_list)
-        parent_pool = random.choices(self.current_generation, weights=fitness_list, k=num_child)
-        next_generation = []
+    def spawnFirstGeneration(self):
+        for i in range(self.size):
+            s = ""
+            for j in range(self.precision * self.arglen):
+                s += str(random.randint(0, 1))
+            self.current_gen.append(s)
     
-        # sorts generation by fitness level
-        sorted_generation = [x for _,x in sorted(zip(fitness_list, self.current_generation), key= lambda x: x[0], reverse=True)]
-        for i in range(carryover):
-            next_generation[i] = sorted_generation[i]
 
-        # perform crossover
-        for i in range(0, num_child, 2):
-            parent2 = parent_pool[i+1]
-            parent1 = parent_pool[i]
+    def getFitness(self, design):
+        args = self.getValuesFromString(design)
+        return self.func(*args)
+        # return eval(self.func_name + str(args))
+    
 
-            string1 = parent1.getBinaryString()
-            string2 = parent2.getBinaryString()
-
-            strlen = len(string1)
-            crossover_point = random.randint(0, strlen)
-
-            new_string1 = string1[:crossover_point] + string2[crossover_point:]
-            new_string2 = string2[:crossover_point] + string1[crossover_point:]
-
-            next_generation.append(Design(self.valueFromBinaryString(new_string1), self))
-            next_generation.append(Design(self.valueFromBinaryString(new_string2), self))
-        
-        self.current_generation = next_generation
-            
-    def valueFromBinaryString(self, string):
-        values = [string[i:i+self.precision] for i in range(0, len(string), self.precision)]
+    def getValuesFromString(self, designString):
+        values = [designString[i:i+self.precision] for i in range(0, len(designString), self.precision)]
         L = self.lowerBound
         U = self.upperBound
         J = 2**self.precision - 1
         converted_values = []
         for x in values:
             converted_values.append(L + ((U-L)/J)*int(x, 2))
-        return converted_values
+        return tuple(converted_values)
+    
+
+    def generateChildren(self, parent1, parent2):
+        crossover_point = random.randint(1, self.precision * self.arglen - 2)
+        child1 = parent1[:crossover_point] + parent2[crossover_point:]
+        child2 = parent2[:crossover_point] + parent1[crossover_point:]
+        children = [child1, child2]
+        for i in range(2):
+            if random.random() < 1:
+                mutation_point = random.randint(0, self.precision * self.arglen - 1)
+                l = list(children[i])
+                l[mutation_point] = "0" if l[mutation_point] == "1" else "1"
+                children[i] = "".join(l)
+        return children
+    
+
+    def generateNewGeneration(self):
+        num_child = round(self.size * (1 - self.elitism))
+        num_carryover = round(self.size * self.elitism)
+        if not num_child % 2 == 0:
+            num_child += 1
+            num_carryover -= 1
+        
+        # calculate fitness for generation and save result
+        gen_fitness = [self.getFitness(x) for x in self.current_gen]
+        self.fitness_history.append(sum(gen_fitness) / self.size)
+
+        # carry over best designs from prev generation based on elitism
+        sorted_generation = [x for _,x in sorted(zip(gen_fitness, self.current_gen), key= lambda x: x[0], reverse=True)]
+        new_gen = sorted_generation[:num_carryover]
+
+        for i in range(0, num_child, 2):
+            new_gen.extend(self.generateChildren(*self.selectParents()))
+        
+        self.current_gen = new_gen
+        
+        
+    def selectParents(self):
+        k = self.tournament_size
+        parent_num = 2
+        parents = []
+        for i in range(parent_num):
+            best = None
+            gen = self.current_gen.copy()
+            # remove already chosen parents from selection pool
+            [gen.remove(p) for p in parents]
+
+            # choose best design from random choice of k designs
+            for j in range(k):
+                ind = random.randint(0, len(gen)-1)
+                if best == None or self.getFitness(best) < self.getFitness(gen[ind]):
+                    best = gen[ind]
+                gen.remove(gen[ind])
+            
+            parents.append(best)
+        return parents
+
 
     def optimize(self):
-        self.firstGen()
+        self.spawnFirstGeneration()
+        self.generateNewGeneration()
         for i in range(self.iter):
-            self.crossover()
-        print(self.sum_fitness)
-        for design in self.current_generation:
-            print(design.data)
-
-"""
-    Class: Design
-    init params:
-        data
-            -tuple
-            -contains the data values for each variable of a potential design
-        population
-            -Population
-            -object of population that design belongs to
-"""
-class Design:
-    def __init__(self, data, population):
-        self.data = tuple(data)
-        self.lowerBound = population.lowerBound
-        self.upperBound = population.upperBound
-        self.precision = population.precision
-    
-    def getBinaryString(self):
-        res = ""
-        L = self.lowerBound
-        U = self.upperBound
-        J = 2**self.precision - 1
-        for value in self.data:
-            X = round(((value - L) * J)/(U - L))
-            res += format(X, f'0{self.precision}b')
-        return res
+            self.generateNewGeneration()
+        
+        best = [x for _,x in sorted(zip([self.getFitness(x) for x in self.current_gen], self.current_gen), key= lambda x: x[0], reverse=True)][0]
+        return (best, self.getValuesFromString(best))
