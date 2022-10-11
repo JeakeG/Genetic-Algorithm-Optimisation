@@ -64,7 +64,7 @@ class GeneticOptimizer:
         if self.mutation < 0 or self.mutation > 1:
             raise Exception("Mutation must be a value from 0 to 1.")
         
-        self.tournament_size = kwargs.get("tournament_size", 3)
+        self.tournament_size = kwargs.get("tournament_size", round(self.size*0.3))
         if self.tournament_size > self.size:
             raise Exception("Tournament size must be smaller than population size")
         
@@ -74,6 +74,7 @@ class GeneticOptimizer:
         self.current_gen = []
         # save current best design
         self.best = None
+        self.bestFitness = []
 
 
     def registerFunc(self):
@@ -149,8 +150,14 @@ class GeneticOptimizer:
         self.fitness_history.append(sum(gen_fitness) / self.size)
 
         # carry over best designs from prev generation based on elitism
-        sorted_generation = [x for _,x in sorted(zip(gen_fitness, self.current_gen), key= lambda x: x[0], reverse=True)]
+        s = sorted(zip(gen_fitness, self.current_gen), key= lambda x: x[0], reverse=True)
+        sorted_generation = [x for _,x in s]
+        sorted_fitness = [x for x,_ in s]
         new_gen = sorted_generation[:num_carryover]
+
+        if self.best == None or self.getFitness(self.best) < sorted_fitness[0]:
+            self.best = sorted_generation[0]
+            self.bestFitness.append(sorted_fitness[0])
 
         for i in range(0, num_child, 2):
             new_gen.extend(self.generateChildren(*self.selectParents()))
@@ -186,4 +193,5 @@ class GeneticOptimizer:
             self.generateNewGeneration()
         
         best = [x for _,x in sorted(zip([self.getFitness(x) for x in self.current_gen], self.current_gen), key= lambda x: x[0], reverse=True)][0]
-        return (best, self.getValuesFromString(best))
+        best = self.best if self.getFitness(self.best) > self.getFitness(best) else best
+        return (best, self.getValuesFromString(best), self.getFitness(best), self.bestFitness)
