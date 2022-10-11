@@ -72,6 +72,8 @@ class GeneticOptimizer:
         self.fitness_history = []
         # list of designs in current generation
         self.current_gen = []
+        # save current best design
+        self.best = None
 
 
     def registerFunc(self):
@@ -117,9 +119,14 @@ class GeneticOptimizer:
     
 
     def generateChildren(self, parent1, parent2):
-        crossover_point = random.randint(1, self.precision * self.arglen - 2)
-        child1 = parent1[:crossover_point] + parent2[crossover_point:]
-        child2 = parent2[:crossover_point] + parent1[crossover_point:]
+        child1 = ""
+        child2 = ""
+        for i in range(self.arglen):
+            crossover_point = random.randint(0, self.precision - 1)
+            start_idx = i*self.precision
+            end_idx = (i+1)*self.precision
+            child1 += parent1[start_idx:start_idx + crossover_point] + parent2[start_idx + crossover_point:end_idx]
+            child2 += parent2[start_idx:start_idx + crossover_point] + parent1[start_idx + crossover_point:end_idx]
         children = [child1, child2]
         for i in range(2):
             if random.random() < 1:
