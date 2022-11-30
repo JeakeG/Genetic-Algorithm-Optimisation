@@ -99,7 +99,7 @@ class GeneticOptimizer:
             traceback.print_exc()
             return False
     
-    def objFun(self, args):
+    def objFun(self, *args):
         return eval(self.func_name + str(args))
 
 
