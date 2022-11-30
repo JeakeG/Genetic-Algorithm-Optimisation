@@ -1,5 +1,6 @@
 import inspect
 import random
+import traceback
 
 """
     Class: GeneticOptimizer
@@ -34,8 +35,12 @@ import random
 """
 class GeneticOptimizer:
     def __init__(self, func, lowerBound, upperBound, **kwargs):
-        self.func = func
-        self.arglen = len(str(inspect.signature(self.func)).split(","))
+        if isinstance(func, str):
+            if not self.registerFunc(func): exit(-1)
+            self.func = self.objFun
+        else:
+            self.func = func
+            self.arglen = len(str(inspect.signature(self.func)).split(","))
 
         self.lowerBound = lowerBound
         self.upperBound = upperBound
@@ -77,9 +82,9 @@ class GeneticOptimizer:
         self.bestFitness = []
 
 
-    def registerFunc(self):
+    def registerFunc(self, f):
         try:
-            string = self.func
+            string = f
             split_string = string.split("=")
             func_name = string.split("(")[0]
             exec(f"global {func_name}\ndef {split_string[0].strip()}:   return {split_string[1].strip()}")
@@ -91,7 +96,11 @@ class GeneticOptimizer:
 
             return True
         except Exception as e:
+            traceback.print_exc()
             return False
+    
+    def objFun(self, args):
+        return eval(self.func_name + str(args))
 
 
     def spawnFirstGeneration(self):
@@ -105,7 +114,6 @@ class GeneticOptimizer:
     def getFitness(self, design):
         args = self.getValuesFromString(design)
         return self.func(*args)
-        # return eval(self.func_name + str(args))
     
 
     def getValuesFromString(self, designString):
@@ -188,7 +196,7 @@ class GeneticOptimizer:
 
     def optimize(self):
         self.spawnFirstGeneration()
-        self.generateNewGeneration()
+
         for i in range(self.iter):
             self.generateNewGeneration()
         
